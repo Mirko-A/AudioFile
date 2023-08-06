@@ -115,7 +115,7 @@ public:
     bool save (std::string filePath, AudioFileFormat format = AudioFileFormat::Wave);
         
     //=============================================================
-    void playRawAudioFile(bool async);
+    void play(bool async);
 
     //=============================================================
     /** Loads an audio file from data in memory */
@@ -367,7 +367,7 @@ AudioFile<T>::~AudioFile()
 }
 //=============================================================
 template <class T>
-void AudioFile<T>::playRawAudioFile(bool async)
+void AudioFile<T>::play(bool async)
 {
     if (binaryDataBuffer == nullptr)
     {
