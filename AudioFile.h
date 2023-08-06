@@ -37,6 +37,13 @@
 #define NOMINMAX
 #endif
 
+#ifdef _WIN32
+    #include <windows.h>
+    #include <mmsystem.h>
+#else
+    #error OS not supported (sry use Windows)
+#endif
+
 #include <iostream>
 #include <vector>
 #include <cassert>
@@ -88,6 +95,10 @@ public:
     //=============================================================
     /** Constructor */
     AudioFile();
+
+    //=============================================================
+    /** Destructor */
+    ~AudioFile();
     
     /** Constructor, using a given file path to load a file */
     AudioFile (std::string filePath);
@@ -96,13 +107,16 @@ public:
     /** Loads an audio file from a given file path.
      * @Returns true if the file was successfully loaded
      */
-    bool load (std::string filePath);
+    bool load (std::string filePath, bool saveBinaryData = false);
     
     /** Saves an audio file to a given file path.
      * @Returns true if the file was successfully saved
      */
     bool save (std::string filePath, AudioFileFormat format = AudioFileFormat::Wave);
         
+    //=============================================================
+    void playRawAudioFile(bool async);
+
     //=============================================================
     /** Loads an audio file from data in memory */
     bool loadFromMemory (std::vector<uint8_t>& fileData);
@@ -169,6 +183,12 @@ public:
      *      samples[channel][sampleIndex]
      */
     AudioBuffer samples;
+
+    //=============================================================
+    /** A buffer which will store the binary data of the file in order to play it 
+     *  through an OS API
+     */
+    uint8_t* binaryDataBuffer;
     
     //=============================================================
     /** An optional iXML chunk that can be added to the AudioFile. 
@@ -183,7 +203,7 @@ private:
         LittleEndian,
         BigEndian
     };
-    
+
     //=============================================================
     AudioFileFormat determineAudioFileFormat (std::vector<uint8_t>& fileData);
     bool decodeWaveFile (std::vector<uint8_t>& fileData);
@@ -324,6 +344,7 @@ AudioFile<T>::AudioFile()
     samples.resize (1);
     samples[0].resize (0);
     audioFileFormat = AudioFileFormat::NotLoaded;
+    binaryDataBuffer = nullptr;
 }
 
 //=============================================================
@@ -332,6 +353,37 @@ AudioFile<T>::AudioFile (std::string filePath)
  :  AudioFile<T>()
 {
     load (filePath);
+}
+
+template <class T>
+AudioFile<T>::~AudioFile()
+{
+    if (binaryDataBuffer != nullptr)
+    {
+        PlaySound(NULL, 0, 0);     // STOP ANY PLAYING SOUND 
+        delete[] binaryDataBuffer; // BEFORE DELETING THE BUFFER
+        binaryDataBuffer = nullptr;
+    }
+}
+//=============================================================
+template <class T>
+void AudioFile<T>::playRawAudioFile(bool async)
+{
+    if (binaryDataBuffer == nullptr)
+    {
+        std::cout << "Cannot play file. Binary data missing!" << std::endl;
+        return;
+    }
+
+    HINSTANCE HInstance = GetModuleHandle(0);
+
+    if (async)
+    {
+        PlaySound((LPCWSTR)binaryDataBuffer, HInstance, SND_MEMORY | SND_ASYNC);
+        Sleep(getLengthInSeconds() * 1000);
+    }
+    else
+        PlaySound((LPCWSTR)binaryDataBuffer, HInstance, SND_MEMORY);
 }
 
 //=============================================================
@@ -499,7 +551,7 @@ void AudioFile<T>::shouldLogErrorsToConsole (bool logErrors)
 
 //=============================================================
 template <class T>
-bool AudioFile<T>::load (std::string filePath)
+bool AudioFile<T>::load (std::string filePath, bool saveBinaryData)
 {
     std::ifstream file (filePath, std::ios::binary);
     
@@ -532,13 +584,19 @@ bool AudioFile<T>::load (std::string filePath)
     
     // Handle very small files that will break our attempt to read the
     // first header info from them
-    if (fileData.size() < 12)
+    size_t dataSize = fileData.size();
+    if (dataSize < 12)
     {
         reportError ("ERROR: File is not a valid audio file\n" + filePath);
         return false;
     }
     else
     {
+        if (saveBinaryData)
+        {
+            binaryDataBuffer = new uint8_t[dataSize];
+            memcpy(binaryDataBuffer, fileData.data(), dataSize);
+        }
         return loadFromMemory (fileData);
     }
 }
